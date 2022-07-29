@@ -1,0 +1,19 @@
+{
+  "packages": [
+    "ssl"
+  ],
+  "deps": [
+    {
+      "locator": "github.com/redvers/pony-librecrypto.git",
+      "version": ""
+    }
+  ],
+  "info": {
+    "description": "",
+    "homepage": "",
+    "license": "",
+    "documentation_url": "",
+    "version": "",
+    "name": ""
+  }
+}
