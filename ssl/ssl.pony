@@ -3,14 +3,19 @@ use "crypto"
 
 use @SSL_new[SslST](ctx: SSLContextST tag)
 use @SSL_set_verify[None](s: SslST, mode: I32, callback: Pointer[None] tag)
+use @SSL_set_bio[None](s: SslST, rbio: BioST tag, wbio: BioST tag)
+use @SSL_ctrl[I64](s: SslST tag, cmd: I32, larg: I64, parg: Pointer[None] tag)
+use @SSL_set_accept_state[None](s: SslST tag)
+use @SSL_set_connect_state[None](s: SslST tag)
+use @SSL_do_handshake[I32](s: SslST)
 
 struct SslST
 
 class SSL
   let _hostname: String
   var _ssl: SslST
-  var _input: BIO = BIO
-  var _output: BIO = BIO
+  var _input: BIO
+  var _output: BIO
   var _state: SSLState = SSLHandshake
   var _read_buf: Array[U8] iso = []
 
@@ -25,14 +30,11 @@ class SSL
 
     let mode = if verify then I32(3) else I32(0) end
     @SSL_set_verify(_ssl, mode, Pointer[U8])
-/*
-    _input = @BIO_new(@BIO_s_mem())
-    if _input.is_null() then error end
 
-    _output = @BIO_new(@BIO_s_mem())
-    if _output.is_null() then error end
+		_input = BIO.create()?
+		_output = BIO.create()?
 
-    @SSL_set_bio(_ssl, _input, _output)
+		@SSL_set_bio(_ssl, _input.bio, _output.bio)
 
     if
       (_hostname.size() > 0)
@@ -49,7 +51,6 @@ class SSL
       @SSL_set_connect_state(_ssl)
       @SSL_do_handshake(_ssl)
     end
-*/
 
 //  Original Name: SSL_new./include/openssl/ssl.h:1285
 
