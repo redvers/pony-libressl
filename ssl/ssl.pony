@@ -1,14 +1,55 @@
 use "net"
 use "crypto"
 
-use @SSL_new[NullablePointer[SslST]](ctx: NullablePointer[SSLContextST])
+use @SSL_new[SslST](ctx: SSLContextST tag)
+use @SSL_set_verify[None](s: SslST, mode: I32, callback: Pointer[None] tag)
 
 struct SslST
 
-//class SSL
-//  let _hostname: String
-//  var _ssl: Sslst
+class SSL
+  let _hostname: String
+  var _ssl: SslST
+  var _input: BIO = BIO
+  var _output: BIO = BIO
+  var _state: SSLState = SSLHandshake
+  var _read_buf: Array[U8] iso = []
 
+  new create(ctx: SSLContextST tag,
+             server: Bool,
+             verify: Bool,
+             hostname: String = "")? =>
+
+    _ssl = @SSL_new(ctx)
+    if (NullablePointer[SslST](_ssl).is_none()) then error end
+    _hostname = hostname
+
+    let mode = if verify then I32(3) else I32(0) end
+    @SSL_set_verify(_ssl, mode, Pointer[U8])
+/*
+    _input = @BIO_new(@BIO_s_mem())
+    if _input.is_null() then error end
+
+    _output = @BIO_new(@BIO_s_mem())
+    if _output.is_null() then error end
+
+    @SSL_set_bio(_ssl, _input, _output)
+
+    if
+      (_hostname.size() > 0)
+        and not DNS.is_ip4(_hostname)
+        and not DNS.is_ip6(_hostname)
+    then
+      // SSL_set_tlsext_host_name
+      @SSL_ctrl(_ssl, 55, 0, _hostname.cstring())
+    end
+
+    if server then
+      @SSL_set_accept_state(_ssl)
+    else
+      @SSL_set_connect_state(_ssl)
+      @SSL_do_handshake(_ssl)
+    end
+*/
 
 //  Original Name: SSL_new./include/openssl/ssl.h:1285
 
@@ -182,3 +223,11 @@ struct SslST
   Original Name: SSL_write_ex./include/openssl/ssl.h:1297
   Original Name: SSL_write./include/openssl/ssl.h:1294
 */
+
+
+primitive SSLHandshake
+primitive SSLAuthFail
+primitive SSLReady
+primitive SSLError
+
+type SSLState is (SSLHandshake | SSLAuthFail | SSLReady | SSLError)

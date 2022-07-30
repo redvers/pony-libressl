@@ -1,23 +1,125 @@
+use "files"
 use "crypto"
+//  Original Name: SSL_CTX_new./include/openssl/ssl.h:1114
 use @SSL_CTX_new[SSLContextST](methods: SSLMethodST)
 use @SSLv23_method[SSLMethodST]()
+//  Original Name: SSL_CTX_ctrl./include/openssl/ssl.h:1320
 use @SSL_CTX_ctrl[I64](ctx: SSLContextST tag, cmd: I32, larg: I64, parg: Pointer[None] tag)
+use @SSL_CTX_load_verify_locations[I32](ctx: SSLContextST tag, ca_file: Pointer[U8] tag, ca_path: Pointer[U8] tag)
+use @CertOpenSystemStoreA[Pointer[U8] tag](prov: Pointer[U8] tag, protcol: Pointer[U8] tag) if windows
+use @SSL_CTX_use_certificate_chain_file[I32](ctx: SSLContextST, file: Pointer[U8] tag)
+use @SSL_CTX_use_PrivateKey_file[I32](ctx: SSLContextST, file: Pointer[U8] tag, xtype: I32)
+use @SSL_CTX_check_private_key[I32](ctx: SSLContextST)
+
 
 struct SSLContextST
 struct SSLMethodST
 
 class SSLContext
-  var _ctx: SSLContextST
+  var ctx: SSLContextST
   var _client_verify: Bool = true
   var _server_verify: Bool = false
 
 	new create() =>
-    _ctx = @SSL_CTX_new(@SSLv23_method())
+    ctx = @SSL_CTX_new(@SSLv23_method())
     set_options(_SslOpNoSslMask() + _SslOpNoSslV2())
+
+  fun ref set_authority(file: (FilePath | None),
+                        path: (FilePath | None) = None)? =>
+    if (file is None) and (path is None) then
+      ifdef windows then
+        _load_windows_root_certs()?
+      else
+        error
+      end
+    else
+      let fs = try (file as FilePath).path else "" end
+      let ps = try (path as FilePath).path else "" end
+
+      let f = if fs.size() > 0 then fs.cstring() else Pointer[U8] end
+      let p = if ps.size() > 0 then ps.cstring() else Pointer[U8] end
+
+      if
+          NullablePointer[SSLContextST](ctx).is_none()
+          or (f.is_null() and p.is_null())
+          or (0 == @SSL_CTX_load_verify_locations(ctx, f, p))
+      then
+        error
+      end
+    end
+
+  fun ref _load_windows_root_certs() ? =>
+    ifdef windows then
+      let root_str = "ROOT"
+      let hStore = @CertOpenSystemStoreA(Pointer[U8], root_str.cstring())
+      if hStore.is_null() then error end
+
+/*
+      let x509_store = @X509_STORE_new()
+      if x509_store.is_null() then error end
+
+      try
+        var pContext: NullablePointer[_CertContext]
+        pContext =
+          @CertEnumCertificatesInStore(hStore, NullablePointer[_CertContext].none())
+
+        while not pContext.is_none() do
+          let cert_context = pContext()?
+          let x509 = @d2i_X509(Pointer[U8], addressof cert_context.pbCertEncoded,
+            cert_context.cbCertEncoded)
+          if not x509.is_null() then
+            let result = @X509_STORE_add_cert(x509_store, x509)
+            @X509_free(x509)
+            if result != 1 then error end
+          end
+
+          pContext = @CertEnumCertificatesInStore(hStore, pContext)
+        end
+
+        @SSL_CTX_set_cert_store(ctx, x509_store)
+      else
+        @X509_STORE_free(x509_store)
+      then
+        @CertCloseStore(hStore, U32(0))
+      end
+*/
+    end
+
+  fun ref set_cert(cert: FilePath, key: FilePath) ? =>
+    """
+    The cert file is a PEM certificate chain. The key file is a private key.
+    Servers must set this. For clients, it is optional.
+    """
+    if
+      NullablePointer[SSLContextST](ctx).is_none()
+        or (cert.path.size() == 0)
+        or (key.path.size() == 0)
+        or (0 == @SSL_CTX_use_certificate_chain_file(
+          ctx, cert.path.cstring()))
+        or (0 == @SSL_CTX_use_PrivateKey_file(
+          ctx, key.path.cstring(), I32(1)))
+        or (0 == @SSL_CTX_check_private_key(ctx))
+    then
+      error
+    end
+
+  fun ref set_client_verify(state: Bool) =>
+    """
+    Set to true to require verification. Defaults to true.
+    """
+    _client_verify = state
+
+  fun ref set_server_verify(state: Bool) =>
+    """
+    Set to true to require verification. Defaults to false.
+    """
+    _server_verify = state
+
+
 
 
   fun ref allow_tls_v1_v2(state: Bool) =>
-    if not (NullablePointer[SSLContextST](_ctx).is_none()) then
+    if not (NullablePointer[SSLContextST](ctx).is_none()) then
       clear_options(_SslOpNoTlsV1u2())
     else
       set_options(_SslOpNoTlsV1u2())
@@ -25,10 +127,29 @@ class SSLContext
 
 
   fun ref set_options(opts: I64): I64 =>
-    @SSL_CTX_ctrl(_ctx, I32(32), opts, Pointer[None]) // SSL_CTRL_OPTIONS
+    @SSL_CTX_ctrl(ctx, I32(32), opts, Pointer[None]) // SSL_CTRL_OPTIONS
 
   fun ref clear_options(opts: I64): I64 =>
-    @SSL_CTX_ctrl(_ctx, I32(77), opts, Pointer[None]) // SSL_CTRL_CLEAR_OPTIONS
+    @SSL_CTX_ctrl(ctx, I32(77), opts, Pointer[None]) // SSL_CTRL_CLEAR_OPTIONS
+
+//  fun client(hostname: String = ""): SSL iso^ ? =>
+//    """
+//    Create a client-side SSL session. If a hostname is supplied, the server
+//    side certificate must be valid for that hostname.
+//    """
+//    let ctx = ctx
+//    let verify = _client_verify
+//    recover SSL._create(ctx, false, verify, hostname)? end
+
+  fun ref server(): SSL iso^ ? =>
+    """
+    Create a server-side SSL session.
+    """
+    let verify = _server_verify
+    let contexttag: SSLContextST tag = ctx
+    recover SSL.create(contexttag, true, verify)? end
+
+
 
 
 primitive _SslOpNoSslV2    fun val apply(): I64 => 0x01000000 // 0 in 1.1
@@ -91,7 +212,6 @@ primitive _SslOpNoSslMask
   Original Name: SSL_CTX_get_ciphers./include/openssl/ssl.h:1109
   Original Name: SSL_CTX_set_cipher_list./include/openssl/ssl.h:1110
   Original Name: SSL_CTX_set_ciphersuites./include/openssl/ssl.h:1112
-  Original Name: SSL_CTX_new./include/openssl/ssl.h:1114
   Original Name: SSL_CTX_free./include/openssl/ssl.h:1115
   Original Name: SSL_CTX_up_ref./include/openssl/ssl.h:1116
   Original Name: SSL_CTX_set_timeout./include/openssl/ssl.h:1117
@@ -133,7 +253,6 @@ primitive _SslOpNoSslMask
   Original Name: SSL_CTX_set1_param./include/openssl/ssl.h:1281
   Original Name: SSL_CTX_get_max_early_data./include/openssl/ssl.h:1300
   Original Name: SSL_CTX_set_max_early_data./include/openssl/ssl.h:1301
-  Original Name: SSL_CTX_ctrl./include/openssl/ssl.h:1320
   Original Name: SSL_CTX_callback_ctrl./include/openssl/ssl.h:1321
   Original Name: SSL_CTX_set_ssl_version./include/openssl/ssl.h:1327
   Original Name: SSL_CTX_set_client_CA_list./include/openssl/ssl.h:1379
