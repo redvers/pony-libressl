@@ -8,6 +8,9 @@ use @SSL_ctrl[I64](s: SslST tag, cmd: I32, larg: I64, parg: Pointer[None] tag)
 use @SSL_set_accept_state[None](s: SslST tag)
 use @SSL_set_connect_state[None](s: SslST tag)
 use @SSL_do_handshake[I32](s: SslST)
+use @SSL_write[I32](ssl: SslST tag, buf: Pointer[U8] tag, num: I32)
+use @SSL_free[None](ssl: SslST tag)
+use @SSL_get_peer_certificate[X509ST](s: SslST tag)
 
 struct SslST
 
@@ -51,6 +54,159 @@ class SSL
       @SSL_set_connect_state(_ssl)
       @SSL_do_handshake(_ssl)
     end
+
+	fun get_peer_certificate(): X509 ? =>
+		let cert: X509ST = @SSL_get_peer_certificate(_ssl)
+		X509.from_certificate(cert)?
+
+  fun state(): SSLState =>
+    _state
+
+  fun ref write(data: ByteSeq) ? =>
+    if _state isnt SSLReady then error end
+
+    if data.size() > 0 then
+      @SSL_write(_ssl, data.cpointer(), data.size().i32())
+    end
+
+  fun ref can_send(): Bool =>
+    """
+    Returns true if there are encrypted bytes to be passed to the destination.
+    """
+    if (_output.ctrl_pending() > 0) then true else false end
+
+  fun ref send(): Array[U8] iso^ ? =>
+    """
+    Returns encrypted bytes to be passed to the destination. Raises an error
+    if no data is available.
+    """
+		_output.read()?
+
+  fun ref receive(data: ByteSeq) =>
+    """
+    When data is received, add it to the SSL session.
+    """
+		_input.write(data)
+
+    if _state is SSLHandshake then
+      let r = @SSL_do_handshake(_ssl)
+
+      if r > 0 then
+				None
+//        _verify_hostname()
+//      else
+//        match @SSL_get_error(_ssl, r)
+//        | 1 => _state = SSLAuthFail
+//        | 5 | 6 => _state = SSLError
+//        end
+      end
+    end
+
+
+  fun ref _verify_hostname() =>
+    """
+    Verify that the certificate is valid for the given hostname.
+    """
+    if _hostname.size() > 0 then
+			try
+				let cert: X509 = get_peer_certificate()?
+			end
+//      let ok = X509.valid_for_host(cert, _hostname)
+//
+//      if not cert.is_null() then
+//        @X509_free(cert)
+//      end
+//
+//      if not ok then
+//        _state = SSLAuthFail
+//        return
+//      end
+    end
+
+    _state = SSLReady
+
+  fun ref read(expect: USize = 0): (Array[U8] iso^ | None) =>
+    """
+    Returns unencrypted bytes to be passed to the application. If `expect` is
+    non-zero, the number of bytes returned will be exactly `expect`. If no data
+    (or less than `expect` bytes) is available, this returns None.
+    """
+		None
+/*
+    let offset = _read_buf.size()
+
+    var len = if expect > 0 then
+      if offset >= expect then
+        return _read_buf = []
+      end
+
+      expect - offset
+    else
+      1024
+    end
+
+    let max = if expect > 0 then expect - offset else USize.max_value() end
+    let pending = @SSL_pending(_ssl).usize()
+
+    if pending > 0 then
+      if expect > 0 then
+        len = len.min(pending)
+      else
+        len = pending
+      end
+
+      _read_buf.undefined(offset + len)
+      @SSL_read(_ssl, _read_buf.cpointer(offset), len.u32())
+    else
+      _read_buf.undefined(offset + len)
+      let r =
+        @SSL_read(_ssl, _read_buf.cpointer(offset), len.u32())
+
+      if r <= 0 then
+        match @SSL_get_error(_ssl, r)
+        | 1 | 5 | 6 => _state = SSLError
+        | 2 =>
+          // SSL buffer has more data but it is not yet decoded (or something)
+          _read_buf.truncate(offset)
+          return None
+        end
+
+        _read_buf.truncate(offset)
+      else
+        _read_buf.truncate(offset + r.usize())
+      end
+    end
+
+    let ready = if expect == 0 then
+      _read_buf.size() > 0
+    else
+      _read_buf.size() == expect
+    end
+
+    if ready then
+      _read_buf = []
+    else
+      // try and read again any pending data that SSL hasn't decoded yet
+      if @BIO_ctrl_pending(_input) > 0 then
+        read(expect)
+      else
+        ifdef "openssl_1.1.x" then
+          // try and read again any data already decoded from SSL that hasn't
+          // been read via `SSL_has_pending` that was added in 1.1
+          // This mailing list post has a good description of what it is for:
+          // https://mta.openssl.org/pipermail/openssl-users/2017-January/005110.html
+          if @SSL_has_pending(_ssl) == 1 then
+            read(expect)
+          end
+        end
+      end
+    end
+*/
+
+	fun ref dispose() =>
+		if not (NullablePointer[SslST](_ssl).is_none()) then
+			@SSL_free(_ssl)
+		end
 
 //  Original Name: SSL_new./include/openssl/ssl.h:1285
 

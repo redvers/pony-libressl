@@ -132,14 +132,14 @@ class SSLContext
   fun ref clear_options(opts: I64): I64 =>
     @SSL_CTX_ctrl(ctx, I32(77), opts, Pointer[None]) // SSL_CTRL_CLEAR_OPTIONS
 
-//  fun client(hostname: String = ""): SSL iso^ ? =>
-//    """
-//    Create a client-side SSL session. If a hostname is supplied, the server
-//    side certificate must be valid for that hostname.
-//    """
-//    let ctx = ctx
-//    let verify = _client_verify
-//    recover SSL._create(ctx, false, verify, hostname)? end
+  fun client(hostname: String = ""): SSL iso^ ? =>
+    """
+    Create a client-side SSL session. If a hostname is supplied, the server
+    side certificate must be valid for that hostname.
+    """
+    let verify = _client_verify
+    let contexttag: SSLContextST tag = ctx
+    recover SSL.create(contexttag, false, verify, hostname)? end
 
   fun ref server(): SSL iso^ ? =>
     """
